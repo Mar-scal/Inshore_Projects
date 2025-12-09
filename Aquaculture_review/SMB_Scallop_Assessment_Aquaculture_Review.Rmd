@@ -1,0 +1,1207 @@
+---
+title: "SMB Scallop - Aquaculture Review"
+author: "Brittany Wilson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+---
+
+# Section 1: Gonad Analysis
+
+```{r loading libraries, functions and data, include = FALSE, message = FALSE}
+
+library(tidyverse)
+#library(raster)
+#library(sf)
+library(mgcv)
+library(lme4)
+library(nlme)
+library(gridExtra)
+library(gratia)
+library(ggspatial)
+library(lattice)
+library(viridis)
+library(flextable)
+library(GGally)
+library(RColorBrewer)
+library(png)
+library(grid)
+library(glmmTMB)
+library(performance)
+library(sf)
+require (lubridate)
+require (PBSmapping)
+require(maptools)
+library(ggcorrplot)
+library(scales)
+
+source("Z:/Projects/Holistic_sampling_with_HGS/TechReport_SPA3/Pr_Frac_function.R") #Plotting residuals
+source("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/HighstatLibV13.R")
+
+data <- read_csv("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/SPA3_scallop_data.csv", show_col_types = FALSE) 
+
+funcs <- c("https://raw.githubusercontent.com/Mar-scal/Assessment_fns/master/Maps/pectinid_projector_sf.R",
+           "https://raw.githubusercontent.com/Mar-scal/Inshore/master/contour.gen.r")
+# Note: uses older contour.gen.r version (working on alternative to contour.gen altogether).
+dir <- getwd()
+for(fun in funcs) 
+{
+  temp <- dir
+  download.file(fun,destfile = basename(fun))
+  source(paste0(dir,"/",basename(fun)))
+  file.remove(paste0(dir,"/",basename(fun)))
+}
+
+
+sf::sf_use_s2(FALSE)
+
+```
+
+```{r, include = FALSE, message = FALSE}
+names(data)
+#str(data)
+
+#missing values
+#colSums(is.na(data)) 
+
+```
+
+-   Spatial Area: delineated by
+
+    Offshelf = Mid.Lon \< -66.4
+
+    onshelf = Mid.Lon \> -66.4 and Mid.Lat \< 44.23
+
+    St.Marys = Mid.Lat \> 44.23
+    
+
+SPA 3 data broken out by areas St. Mary's Bay (dark purple), on shelf (green) and off shelf (yellow).
+
+```{r explore the data summary, include = FALSE, message = FALSE, warning = FALSE}
+
+#format data - factors, numeric
+cols.factor <- c("Tow_Sample.ID","Tow", "Strata", "SPA", "Cruise", "Strata_ID", "Sample.ID",  "Alb", "Epifauna", "Sex", "Maturity", "Meat.Colour", "Mycobacterium", "Sand","Boring.Upper", "Boring.Lower", "Pearl.Location.edit", "Spatial_Area")
+
+cols.numeric <- c("Age","Pearls","Nodules","Height", "Width", "DEPTH", "GSI")
+
+data[,cols.factor] <- lapply(data[,cols.factor],as.factor)
+data[,cols.numeric] <- lapply(data[,cols.numeric], function(x){ as.numeric(x)})
+
+data <- data |> 
+  dplyr::rename(Viscera = Viscera.Wet.Corrected) |> 
+  dplyr::rename(Gonad = Gonad.Wet.Corrected) |> 
+  dplyr::rename(Muscle = Muscle.Wet.Corrected)
+
+#Standardize height and depth
+
+data$Log.Height <- log(data$Height)
+data$Log.Height.std <- data$Log.Height - mean(data$Log.Height)
+
+data$Muscle.std <- MyStd(data$Muscle)
+data$Height.std <- MyStd(data$Height)
+data$Depth.std <- MyStd(data$DEPTH)
+
+data.dry <- data #Save for index of fecundity
+#str(data)
+
+data <- data |> 
+  dplyr::select(Gonad, Height, Log.Height.std, Log.Height, Depth.std, Tow, Sex, Spatial_Area, GSI, DDSlat, DDSlon, Muscle, Maturity, Age) |> 
+  drop_na()
+
+data.sf <- data |> 
+  st_as_sf(coords = c("DDSlon","DDSlat"), crs = 4326)
+
+p <- pecjector(area = "spa3",repo ='github',c_sys="ll", gis.repo = 'github', plot=F,plot_as = 'ggplot',
+               add_layer = list(land = "grey", bathy = "ScallopMap", survey = c("inshore", "outline"), scale.bar=c('tl',0.5,-1,-1)))
+
+mycols.1 <- c("lightgoldenrod2","seagreen3","maroon4")
+#c( "#CC6677", 'darkblue',"#44AA99")
+                     
+                  #  ,"seagreen3", , "magenta4","orangered3" ,"steelblue4",  "darkseagreen3", "sandybrown" , "peachpuff3", "grey44", "tomato4",  , "olivedrab3", "aquamarine3") #"#6A5ACD",
+#barplot(c(1,2,3), col = mycols.1)
+
+```
+
+```{r Spatial Plot, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+p +
+  geom_sf(data = data.sf, aes(colour = Spatial_Area, size = 1))+
+  scale_colour_manual(values = mycols.1)
+```
+
+
+## Data exploration
+
+```{r Data exploration, include = TRUE}
+
+# Number of observations per tow:
+table(data$Tow)
+
+# Number of observations per Spatial_Area:
+table(data$Spatial_Area)
+
+# Number of observations per Sex:
+table(data$Sex)
+
+# Number of observations per Sex:
+table(data$Sex, data$Spatial_Area)
+
+```
+
+## Outliers
+
+```{r Outliers, include = TRUE, echo = FALSE}
+MyVar <- c("Height", "Gonad", "GSI", "Depth.std", "DDSlat", "DDSlon", "Muscle")
+Mydotplot(data[, MyVar])
+```
+
+## Collinearity
+
+### Continuous variables
+
+```{r Collinearity, include = TRUE, warning = FALSE, echo = FALSE, message = FALSE}
+# Make boxplots of the tow conditional on Meat Colour. 
+MyVar <- c("Height", "Gonad", "GSI", "Depth.std", "DDSlat", "DDSlon", "Muscle")
+#Mypairs(data[,MyVar])
+
+#ggpairs(data %>% drop_na() %>% dplyr::select(MyVar),progress = F)
+lowerFn <- function(data, mapping, ...) {
+  p <- ggplot(data = data, mapping = mapping) +
+    geom_point(color = 'blue', alpha=0.3, size=1) +
+    geom_smooth(color = 'black', method='lm', size=1,...)
+  p
+}
+
+g <- ggpairs( 
+  data = data %>% drop_na() %>% dplyr::select(MyVar),
+  lower = list(
+    continuous =  wrap(lowerFn) #wrap("smooth", alpha = 0.3, color = "blue", lwd=1) 
+  ),
+  upper = list(continuous = wrap("cor", size = 4)), progress = F
+)
+g <- g + theme(
+  axis.text = element_text(size = 6),
+  axis.title = element_text(size = 6),
+  legend.background = element_rect(fill = "white"),
+  panel.grid.major = element_line(colour = NA),
+  panel.grid.minor = element_blank(),
+  panel.background = element_rect(fill = "grey95")
+)
+print(g, bottomHeightProportion = 0.5, leftWidthProportion = .5)
+
+```
+
+Collinearity between:
+
+Depth and longitude Height and Gonad and Muscle, GSI and Gonad.
+
+### Categorical variables
+
+```{r Collinearity with categorical vars, include = TRUE, warning = FALSE, echo = FALSE}
+
+# Depth versus Spatial area
+ggplot() + 
+  geom_point(data = data, aes(y = Depth.std, x = Spatial_Area)) +
+  geom_boxplot(data = data, aes(y = Depth.std, x = Spatial_Area))+
+  xlab("Spatial Area") + ylab("Depth")+
+  theme(text = element_text(size=12), legend.position="none")  
+
+#T1 <- lm(Depth.std ~ Spatial_Area, data = data)
+#summary(T1)
+
+#68% of variation in Depth is explained by spatial area - shouldn't use both in the model.
+
+ggplot()+
+ geom_point(data = data, aes(y = Height, x = Maturity)) +
+  geom_boxplot(data = data, aes(y = Height, x = Maturity))+
+  xlab("Maturity") + ylab("Shell Height")+
+  theme(text = element_text(size=12), legend.position="none")
+
+#T2 <- lm(Height ~ Maturity, data = data)
+#summary(T2)
+
+#14% of variation in shell height is explained by maturity - shouldn't use both in the model??
+
+```
+
+## Relationships
+
+```{r Other relationships, include = TRUE, echo = FALSE}
+
+# Boxplot by spatial area
+ggplot() + geom_boxplot(data = data, 
+                    aes(y = Gonad, x = Spatial_Area))+
+  xlab("Spatial area") + ylab("Gonad weight (g)")+
+  theme(text = element_text(size=15)) 
+
+# Boxplot by sex and spatial area
+ggplot() + geom_boxplot(data = data, 
+                    aes(y = Gonad, x = Sex))+
+  xlab("Sex") + ylab("Gonad weight (g)")+
+  theme(text = element_text(size=15))+
+  facet_wrap(~Spatial_Area)
+
+# Boxplot by spatial area
+ggplot() + geom_boxplot(data = data, 
+                    aes(y = GSI, x = Spatial_Area))+
+  xlab("Spatial area") + ylab("GSI (%)")+
+  theme(text = element_text(size=15)) 
+
+#Gonad Weight and Height
+ggplot() + geom_point(data = data, aes(y = Gonad, x = Height))+
+  xlab("Shell Height") + ylab("Gonad weight (g)")+
+  theme(text = element_text(size=15))
+
+#Gonad Weight and Height by tow
+ggplot() + geom_point(data = data, aes(y = Gonad, x = Height))+
+  xlab("Shell Height") + ylab("Gonad weight (g)")+
+  theme(text = element_text(size=15))+
+  geom_smooth(data = data, aes(y = Gonad, x = Height),
+                     method = "lm",
+                     se = FALSE)+
+  facet_wrap(~Tow)
+
+#Gonad Weight and Muscle weight
+ggplot() + geom_point(data = data, aes(y = Gonad, x = Muscle))+
+  xlab("Muscle weight (g)") + ylab("Gonad weight (g)")+
+  theme(text = element_text(size=15))
+
+  
+  #GSI and Height
+ggplot() + geom_point(data = data, aes(y = GSI, x = Height))+
+  xlab("Shell Height") + ylab("GSI (%)")+
+  theme(text = element_text(size=15))
+
+#GSI and Depth
+ggplot() + geom_point(data = data, aes(y = GSI, x = Depth.std))+
+  xlab("depth") + ylab("GSI (%)")+
+  theme(text = element_text(size=15)) 
+
+ggplot()+
+ geom_point(data = data, aes(y = Gonad, x = Maturity)) +
+  geom_boxplot(data = data, aes(y = Gonad, x = Maturity))+
+  xlab("Maturity") + ylab("Gonad Weight")+
+  theme(text = element_text(size=12), legend.position="none", axis.text.x=element_text(angle=90,vjust=-0.025)) +
+  facet_wrap(~Spatial_Area)
+
+ggplot()+
+ geom_point(data = data, aes(y = Gonad, x = Spatial_Area)) +
+  geom_boxplot(data = data, aes(y = Gonad, x = Spatial_Area))+
+  xlab("Maturity") + ylab("Gonad Weight")+
+  theme(text = element_text(size=12), legend.position="none") +
+  facet_wrap(~Maturity)
+
+
+```
+```{r, eval = FALSE}
+p <- ggplot()+
+  geom_point(data = data, 
+                    aes(y = Gonad, x = Height),
+                    shape = 1, 
+                    size = 1)+
+  xlab("Shell Height") + ylab("Gonad weight (g)")+
+  theme(text = element_text(size=15))+
+  geom_smooth(data = data, aes(y = Gonad, x = Height, group = Tow), method = "lm",se = FALSE)
+p
+```
+
+```{r Maturity Ratios, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+#Maturity ratio By Sex
+cols <- brewer.pal(name = "BuPu", n = 6)
+names <- c("Immature","Recovering", "Ripening", "Ripe", "Spawning", "Spent")
+
+data_mat <- data %>% 
+  dplyr::select(Tow, Spatial_Area, Sex, Gonad, Maturity) %>% 
+  group_by(Maturity, Spatial_Area) %>%
+  filter(!is.na(Sex)) %>% 
+  dplyr::summarise(n = n())
+
+ggplot(data_mat, aes(fill=Maturity, y=n, x=Spatial_Area)) + 
+  geom_bar(position="fill", stat="identity")+
+  scale_fill_manual(labels = names, values = cols)+
+  labs(x="Spatial Area", y="Proportion of samples at maturity level",  title = "Maturity ratio by Spatial Area") +
+  theme(legend.position="bottom", legend.direction="horizontal",
+        legend.title = element_blank())
+
+```
+
+Removed Spent samples
+
+```{r Maturity Ratios 2, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+
+data <- data |> 
+  filter(Maturity != "Spent") #|> 
+ # filter(Sex == Female)
+
+data_mat <- data %>% 
+  dplyr::select(Tow, Spatial_Area, Sex, Gonad, Maturity) %>% 
+  group_by(Maturity, Spatial_Area) %>%
+  filter(!is.na(Sex)) %>% 
+  dplyr::summarise(n = n())
+
+ggplot(data_mat, aes(fill=Maturity, y=n, x=Spatial_Area)) + 
+  geom_bar(position="fill", stat="identity")+
+  scale_fill_manual(labels = names, values = cols)+
+  labs(x="Spatial Area", y="Proportion of samples at maturity level",  title = "Maturity ratio by Spatial Area") +
+  theme(legend.position="bottom", legend.direction="horizontal",
+        legend.title = element_blank())
+  
+```
+
+
+## Model formulation
+
+
+
+
+```{r Linear mixed-effects model, eval = FALSE, include = FALSE}
+#We have multiple observations from the same Tow Number, so first try a Linear mixed-effects model - Tow as random intercept:
+M1 <- lme(Gonad ~ Log.Height.std + Spatial_Area,
+          random =~ 1 | Tow,
+          data = data)
+
+mu  <- fitted(M1)           
+E1  <- resid(M1)             
+E1n <- resid(M1, type = "n")
+
+summary(M1)
+
+```
+
+```{r Plot residuals versus fitted values, eval = FALSE, include = FALSE}
+
+par(mfrow = c(1,1), cex.lab = 1.5, mar = c(5,5,2,2))
+plot(x = mu, 
+     y = E1n, 
+     xlab = "Fitted values", 
+     ylab = "Pearson residuals",
+     cex.lab = 1.5)
+abline(h = 0, lty = 2)
+abline(v = 0, lty = 2, col = 2)
+
+#Fitted values plotting below zero, and patterns in residuals. Try GLM.
+
+```
+
+
+### GLM
+
+**Gonad weight and Spatial Area - GLM**
+
+```{r GLM Gonad weight Model, echo = FALSE, include = TRUE}
+
+M3 <- glm(Gonad ~ Spatial_Area + Log.Height.std + Sex + Maturity,  data=data, family=Gamma(link=log))
+summary(M3)
+
+```
+
+## Model validation
+
+```{r Spatial Area and Gonad weight: evaluating model M3, echo = FALSE}
+
+#Save model residuals and fitted values to dataframe
+data <- data.frame(data, M3.res=residuals(M3),  M3.fit=fitted(M3))
+
+#Plotting residuals for each tow
+Res.M3 <-ggplot(data)+
+      geom_point(aes(x=M3.fit,y=M3.res))+theme_bw(22)+
+      geom_hline(yintercept=0, linetype='dashed', col='red')+
+      ylab("Residuals")+xlab("Fitted values") +
+      #facet_wrap(~ Tow, nrow = 5) +
+      theme(text = element_text(size=8), strip.placement = "outside",
+      strip.background = element_blank(), strip.text = element_text(face="bold", 
+      size=6, lineheight = 1.0), panel.spacing.y = unit(.5, "lines"),
+      axis.text.x = element_text(angle=90))
+
+Res.M3
+
+```
+
+**Residuals versus covariates** 
+
+```{r Residuals versus covariates, echo = FALSE, include = TRUE}
+#Is the variation the same everywhere?
+
+grid.arrange(pr.fac(M3, data$Log.Height.std, factorname = "logHeight"),
+             pr.fac(M3, as.factor(data$Sex), factorname = "Sex"),
+    pr.fac(M3, as.factor(data$Spatial_Area), factorname = "Spatial Area"), ncol = 2)
+
+grid.arrange(pr.fac(M3, data$DDSlon, factorname = "Longitude"),
+    pr.fac(M3, data$DDSlat, factorname = "Latitude"),
+    pr.fac(M3, data$GSI, factorname = "GSI"),
+    pr.fac(M3, data$Muscle, factorname = "Muscle Weight"),
+    pr.fac(M3, as.factor(data$Sex), factorname = "Sex"),
+    pr.fac(M3, as.factor(data$Maturity), factorname = "Maturity"), ncol = 4)
+
+```
+
+$R^{2}$ =($\frac{null deviance-residual deviance}{null\ deviance}$)
+
+$R^{2}$ = 0.56
+
+```{r R2 value, echo = FALSE, include = FALSE}
+(M3$null.deviance-M3$deviance)/M3$null.deviance
+```
+
+
+**Predictions**
+
+Predicted Gonad weight for Sex = Female, Maturity = Ripe, and range of Shell height
+
+
+```{r Predictions plot M3, eval = TRUE, echo = FALSE}
+#Plotting model predictions:
+M3.newdata <- expand.grid(Log.Height.std = rep(seq(from  = range(data$Log.Height.std, na.rm = TRUE)[1],
+          to = range(data$Log.Height.std, na.rm = TRUE)[2], length = 25)), Spatial_Area = levels(data$Spatial_Area), Sex = "Female", Maturity = "Ripe")
+
+M3.newdata$predicted.Gonad <- predict(M3, newdata = M3.newdata, allow.new.levels = TRUE, re.form=~0, type="response") 
+
+#Back Standardize height
+M3.newdata$Log.Height <- M3.newdata$Log.Height.std + mean(data$Log.Height)  
+M3.newdata$Height <- exp(M3.newdata$Log.Height)
+
+p1 <- ggplot() + theme_bw() +
+  geom_point(aes(x = Height, y = Gonad, colour = Spatial_Area), data = data) +
+  geom_line(aes(x = Height, y = predicted.Gonad, colour = Spatial_Area), data = M3.newdata) +
+  geom_hline(yintercept = 0, linetype = "dashed", col = "blue") +
+  xlab("Shell Height") + ylab("Gonad weight") +
+  scale_colour_manual(values=mycols.1, name='Spatial Area')+
+  #facet_wrap(~ Spatial_Area, scales = "fixed", nrow = 3) +
+  theme(text = element_text(size=8), strip.placement = "outside",
+        strip.background = element_blank(), strip.text = element_text(face="bold", 
+        size=6, lineheight = 1.0), panel.spacing.y = unit(.5, "lines"))#+
+  #facet_wrap(~Sex)
+p1
+
+p2 <- ggplot(M3.newdata)+
+  geom_line(aes(x=Height, y=predicted.Gonad, col=Spatial_Area), size=1)+
+  xlab("Shell Height (mm)") + ylab("Gonad weight (g)") +
+  scale_colour_manual(values= mycols.1, name='Spatial Area')+
+  facet_wrap(~Sex)
+p2
+
+#p3 <- ggplot() + theme_bw() +
+#  geom_point(aes(x = Log.Height.std, y = Gonad, colour = Spatial_Area), data = data) +
+#  geom_line(aes(x = Log.Height.std, y = predicted.Gonad, colour = Spatial_Area), data = M3.newdata) +
+#  geom_hline(yintercept = 0, linetype = "dashed", col = "blue") +
+#  xlab("Log Shell Height std") + ylab("Gonad weight") +
+#  scale_colour_manual(values=c("green","orange","red"), name='Spatial Area')+
+#  #facet_wrap(~ Spatial_Area, scales = "fixed", nrow = 3) +
+#  theme(text = element_text(size=8), strip.placement = "outside",
+#        strip.background = element_blank(), strip.text = element_text(face="bold", 
+#        size=6, lineheight = 1.0), panel.spacing.y = unit(.5, "lines"))
+#p3
+
+#p4 <- ggplot(M3.newdata)+
+#  geom_line(aes(x=Log.Height.std, y=predicted.Gonad, col=Spatial_Area), size=1)+
+#  scale_colour_manual(values=c("green","orange","red"), name='Spatial Area')
+#p4
+
+```
+
+Predicted Gonad weight for Shell height = 100 mm, Maturity = Ripe, for each spatial area: 
+
+
+```{r Predictions for 100 mm shell height for each area, eval = TRUE, echo = FALSE}
+
+newdata.100.StMar <- data.frame(Log.Height.std=log(100)-mean(data$Log.Height), Spatial_Area = "St.Marys", Sex = levels(data$Sex), Maturity = "Ripe")
+newdata.100.StMar$predicted.Gonad <- predict(M3, newdata = newdata.100.StMar, allow.new.levels = TRUE, re.form=~0, type="response")
+newdata.100.StMar
+
+newdata.100.off <- data.frame(Log.Height.std=log(100)-mean(data$Log.Height), Spatial_Area = "Offshelf", Sex = levels(data$Sex), Maturity = "Ripe")
+newdata.100.off$predicted.Gonad <- predict(M3, newdata = newdata.100.off, allow.new.levels = TRUE, re.form=~0, type="response")
+newdata.100.off
+
+newdata.100.on <- data.frame(Log.Height.std=log(100)-mean(data$Log.Height), Spatial_Area = "Onshelf", Sex = levels(data$Sex), Maturity = "Ripe")
+newdata.100.on$predicted.Gonad <- predict(M3, newdata = newdata.100.on, allow.new.levels = TRUE, re.form=~0, type="response")
+newdata.100.on
+
+```
+
+
+Predicted Gonad weight for Shell height = 100 mm, Sex = Female, Maturity = Ripe, for each spatial area: 
+
+
+```{r Predictions for 100 mm shell height, eval = TRUE, echo = FALSE}
+
+newdata.100 <- data.frame(Log.Height.std=log(100)-mean(data$Log.Height), Spatial_Area = levels(data$Spatial_Area), Sex = "Female", Maturity = "Ripe")
+newdata.100$predicted.Gonad <- predict(M3, newdata = newdata.100, allow.new.levels = TRUE, re.form=~0, type="response")
+
+#St.Marys
+(newdata.100 |> 
+  filter(Spatial_Area == "St.Marys") |> dplyr::select(predicted.Gonad) |> pull())[1]
+
+#Onshelf
+(newdata.100 |> 
+  filter(Spatial_Area == "Onshelf") |> dplyr::select(predicted.Gonad) |> pull())[1]
+
+#Offshelf
+(newdata.100 |> 
+  filter(Spatial_Area == "Offshelf") |> dplyr::select(predicted.Gonad) |> pull())[1]
+```
+
+```{r Egg calculations, eval = TRUE, echo = FALSE}
+newdata.100  |> 
+  group_by(Spatial_Area) |> 
+  summarize(mean_gonad = mean(predicted.Gonad)) |> 
+  mutate(num_eggs = mean_gonad/(1.6*10^-7)) #Barber et al., 1988
+```
+
+```{r More Egg calculations, echo = TRUE, echo = TRUE}
+
+((5.458581 + 5.318328)/2)/(1.6*10^-7) #eggs produced outside smb
+7.805962/(1.6*10^-7)#eggs produced inside smb
+48787263-33677841 #Difference between inside and outside
+```
+
+### Egg production estimates:
+
+Wet weight of an average ova = $1.6*10^{-7}$(Barber et al., 1988).
+
+Avg gonad weight in SMB = $7.8 g$
+
+Avg gonad weight outside = $5.4 g$
+
+Eggs produced in SMB = $7.8 g/1.6*10^{-7} g = 48787265$
+
+Eggs produced outside SMB = $5.4 g/1.6*10^{-7} g = 33677841$
+
+$48787263-33677841 = 15109422$
+
+```{r Index of Fecundity, eval = FALSE, include = FALSE, echo = FALSE}
+
+data.dry.all <- data.dry
+
+data.dry <- data.dry |> 
+  filter(Maturity == "Ripe") #|> 
+ # filter(Sex == Female)
+table(data.dry$Spatial_Area, data.dry$Age)
+
+fecun <- data.dry |>
+  group_by(Spatial_Area, Age) |> 
+  summarize(Mean_Height = mean(Height)) |> 
+  mutate(index_fecundity = Mean_Height^4)
+
+plot.lines.5 <-fecun |>
+  filter(Age == 5)
+plot.lines.8 <-fecun |>
+  filter(Age == 8)
+plot.lines.7 <-fecun |>
+  filter(Age == 7)
+
+ggplot(data = fecun, aes(x = Age, y = index_fecundity))+
+  geom_point(aes(fill = Spatial_Area), shape = 24, colour = "black", size = 5)+
+  geom_segment(data = plot.lines.5, aes(x=5,xend=5,y=0,yend=plot.lines.5$index_fecundity),linetype=2, size = 1)+ #plot lines at age 5
+  geom_segment(data = plot.lines.5,aes(x=0,xend=5,y=plot.lines.5$index_fecundity,yend=plot.lines.5$index_fecundity),linetype=2, size = 1)+#plot lines at age 5
+  #geom_segment(data = plot.lines.8, aes(x=8,xend=8,y=0,yend=plot.lines.8$index_fecundity), linetype=2, size = 1)+ #plot lines at age 8
+  #geom_segment(data = plot.lines.8,aes(x=0,xend=8,y=plot.lines.8$index_fecundity,yend=plot.lines.8$index_fecundity),linetype=2, size = 1)+ #plot lines at age 8
+  geom_segment(data = plot.lines.7, aes(x=7,xend=7,y=0,yend=plot.lines.7$index_fecundity), linetype=2, size = 1)+ #plot lines at age 7
+  geom_segment(data = plot.lines.7,aes(x=0,xend=7,y=plot.lines.7$index_fecundity,yend=plot.lines.7$index_fecundity),linetype=2, size = 1)+ #plot lines at age 7
+  scale_x_continuous(limits = c(0,13), breaks = pretty(fecun$Age, n = 13))+
+  geom_text(data = plot.lines.7, vjust = -1.0, hjust = 1.4, label = "Age = 7", size = 3)+
+  geom_text(data = plot.lines.5, vjust = -1.0, hjust = 1.4, label = "Age = 5", size = 3)+
+  labs(x = "Age", y = "Index of Fecundity")+
+  scale_fill_manual(values = mycols.1)+
+  facet_wrap(.~Spatial_Area)+
+  theme_bw()
+
+#St.Marys Bay
+(fecun |>
+  filter(Age == 5) |> 
+  filter(Spatial_Area == "St.Marys") |> 
+  dplyr::select(index_fecundity)|> pull())[1]
+
+#Onshelf
+(fecun |>
+  filter(Age == 5) |> 
+  filter(Spatial_Area == "Onshelf") |> 
+  dplyr::select(index_fecundity)|> pull())[1]
+
+#Offshelf
+(fecun |>
+  filter(Age == 5) |> 
+  filter(Spatial_Area == "Offshelf") |> 
+  dplyr::select(index_fecundity)|> pull())[1]
+
+mean.fec.ouside <- (96059601+78074896)/2
+
+187388721-mean.fec.ouside
+187388721/mean.fec.ouside
+
+```
+
+
+
+```{r age and gonad weight vs eggs, eval = FALSE, include = FALSE, echo = FALSE}
+#look at age versus gonad weight and age versus eggs (where convert weight to eggs based on the earlier ova weight supplied)
+
+data.eggs <- data |> 
+  filter(Sex == "Female") |>
+  group_by(Spatial_Area, Age) |> 
+  summarize(mean_Gonad = mean(Gonad)) |> 
+  mutate(num_eggs = mean_Gonad/(1.6*10^-7))
+
+plot.lines.5 <-data.eggs  |>
+  filter(Age == 5)
+plot.lines.7 <-data.eggs  |>
+  filter(Age == 7)
+
+ggplot(data = data.eggs, aes(x = Age, y = num_eggs))+
+  geom_point(aes(fill = Spatial_Area), shape = 24, colour = "black", size = 5)+
+  geom_segment(data = plot.lines.5, aes(x=5,xend=5,y=0,yend=plot.lines.5$num_eggs),linetype=2, size = 1)+ #plot lines at age 5  
+  geom_segment(data = plot.lines.5,aes(x=0,xend=5,y=plot.lines.5$num_eggs,yend=plot.lines.5$num_eggs),linetype=2, size = 1)+
+  geom_segment(data = plot.lines.7, aes(x=7,xend=7,y=0,yend=plot.lines.7$num_eggs),linetype=2, size = 1)+ #plot lines at age 5  
+  geom_segment(data = plot.lines.7,aes(x=0,xend=7,y=plot.lines.7$num_eggs,yend=plot.lines.7$num_eggs),linetype=2, size = 1)+
+  scale_x_continuous(limits = c(0,13), breaks = pretty(data$Age, n = 13))+
+  geom_text(data = plot.lines.7, vjust = -1.0, hjust = 1.4, label = "Age = 7", size = 3)+
+  geom_text(data = plot.lines.5, vjust = -1.0, hjust = 1.4, label = "Age = 5", size = 3)+
+  labs(x = "Age", y = "Number of Eggs")+
+  scale_fill_manual(values = mycols.1)+
+  facet_wrap(.~Spatial_Area)+
+  theme_bw()
+
+ggplot(data = data.eggs, aes(x = Age, y = mean_Gonad))+
+  geom_point(aes(fill = Spatial_Area), shape = 24, colour = "black", size = 5)+
+  geom_segment(data = plot.lines.5, aes(x=5,xend=5,y=0,yend=plot.lines.5$mean_Gonad),linetype=2, size = 1)+ #plot lines at age 5  
+  geom_segment(data = plot.lines.5,aes(x=0,xend=5,y=plot.lines.5$mean_Gonad,yend=plot.lines.5$mean_Gonad),linetype=2, size = 1)+
+  geom_segment(data = plot.lines.7, aes(x=7,xend=7,y=0,yend=plot.lines.7$mean_Gonad),linetype=2, size = 1)+ #plot lines at age 5  
+  geom_segment(data = plot.lines.7,aes(x=0,xend=7,y=plot.lines.7$mean_Gonad,yend=plot.lines.7$mean_Gonad),linetype=2, size = 1)+
+  scale_x_continuous(limits = c(0,13), breaks = pretty(data$Age, n = 13))+
+  geom_text(data = plot.lines.7, vjust = -1.0, hjust = 1.4, label = "Age = 7", size = 3)+
+  geom_text(data = plot.lines.5, vjust = -1.0, hjust = 1.4, label = "Age = 5", size = 3)+
+  labs(x = "Age", y = "Mean Gonad weight (g)")+
+  scale_fill_manual(values = mycols.1)+
+  facet_wrap(.~Spatial_Area)+
+  theme_bw()
+
+#St.Marys Bay
+(data.eggs |>
+  filter(Age == 5) |> 
+  filter(Spatial_Area == "St.Marys") |> 
+  dplyr::select(num_eggs)|> pull())[1]
+
+#Onshelf
+(data.eggs |>
+  filter(Age == 5) |> 
+  filter(Spatial_Area == "Onshelf") |> 
+  dplyr::select(num_eggs)|> pull())[1]
+
+#Offshelf
+(data.eggs |>
+  filter(Age == 5) |> 
+  filter(Spatial_Area == "Offshelf") |> 
+  dplyr::select(num_eggs)|> pull())[1]
+
+mean.fec.ouside <- (31250000+38333333)/2
+
+44375000-mean.fec.ouside
+187388721/mean.fec.ouside
+
+
+```
+
+
+```{r GLMER and Gonad weight Mixed Effects Model, eval = FALSE, echo = FALSE}
+
+M3 <- glmer(Gonad ~ Spatial_Area + Log.Height.std + (Log.Height.std|Tow),  data=data, family=Gamma(link=log))
+summary(M3)
+
+M4 <- glmer(Gonad ~ Spatial_Area + Log.Height.std + (1|Tow),  data=data, family=Gamma(link=log))
+summary(M4)
+
+AIC(M3, M4)
+```
+
+# Section 2: Condition
+
+```{r Condition time series for BOF and SMB, include = TRUE, echo = FALSE, warning = FALSE}
+
+cond <- read.csv("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/ConditionTimeSeries.csv")
+
+cond$YEAR <- as.character(cond$YEAR)
+
+cond <- cond |> 
+  filter(STRATA %in% c("SPA1A", "SPA1B", "SMB", "SPA4", "SPA6_INVMS"))# |> 
+  #mutate(STRATA = case_when(STRATA == "SPA1A" ~ "SPA 1A", 
+     #                      STRATA == "SPA1B" ~ "SPA 1B",
+      #                     STRATA == "SMB" ~ "SMB",
+       #                    STRATA == "SPA4" ~ "SPA 4",
+        #                   STRATA == "SPA6_INVMS" ~ "SPA6"))
+  
+  Condition.BoF.plot <- ggplot(data = cond, aes(x = YEAR)) + 
+    geom_point(aes(y = CONDITION, color = STRATA))+
+  geom_line(aes(y = CONDITION,  color = STRATA, size = STRATA), group = 1)+
+    scale_size_manual(values = c(SPA1A=1, SPA1B=1, SMB=2, SPA4=1, SPA6_INVMS=1), labels = c("SPA 1A","SPA 1B","SMB","SPA 4","SPA6"))+
+    scale_colour_manual(values = c(SPA1A="turquoise4", SPA1B="goldenrod2",SMB="mediumvioletred",SPA4="seagreen", SPA6_INVMS="blue4"), labels = c("SPA 1A","SPA 1B","SMB","SPA 4","SPA6"))+
+  xlab("Year") + ylab("Condition (meat weight, g)") + theme_bw() +
+  coord_cartesian(ylim=c(8, 16)) +
+  scale_y_continuous(breaks=seq(5, 20, 5))+
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size = 12),
+        legend.box.just = "left",
+        legend.margin = margin(6, 6, 6, 6),
+        legend.title = element_blank(),
+        text = element_text(size=20),
+        axis.text.x=element_text(angle=90, vjust = 0.05)) +
+  guides(linetype=guide_legend(keywidth = 2.5, keyheight = 1.5))
+  
+Condition.BoF.plot
+
+```
+
+Average condition outside SMB = 11.3 g
+
+Average condition inside SMB = 13.6 g
+
+```{r average condtion, echo = TRUE, include = TRUE}
+
+#Average condtion:
+
+#Outside SMB
+cond |> 
+  filter(STRATA != "SMB") |> 
+  #group_by(STRATA) |> 
+  dplyr::summarize(Average_cond = mean(CONDITION, na.rm=TRUE))
+
+#Inside SMB
+cond |> 
+  filter(STRATA == "SMB") |> 
+  #group_by(STRATA) |> 
+  dplyr::summarize(Average_cond = mean(CONDITION, na.rm=TRUE))
+
+```
+
+# Section 3: Spatial patterns
+
+## Adult scallop (>= 65 mm)
+
+```{r Contour plot setup - load data, echo = FALSE, include = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+
+ScallopSurv <- read.csv("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/ScallSurv_1991-2022.csv") 
+
+ScallopSurv.sf <- ScallopSurv |>
+  st_as_sf(coords = c("lon","lat"), crs = 4326) |> 
+  st_transform(4269)
+
+sites.sf <- st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/SMB_proposed_Aquaculture_sites.shp")
+pezs <- rbind(st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1449.shp") |> st_cast("LINESTRING"),
+              st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1450.shp"),
+              st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1451.shp"),
+              st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1452.shp")|> st_cast("LINESTRING"))
+
+pezs <- pezs |> 
+  mutate(PEZ_type = "feces")
+
+pez.1449 <- st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1449.shp")
+pez.1452 <- st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1452.shp")
+pez.poly <- st_union(pez.1449, pez.1452)
+
+pezs.feed <- rbind(st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/PEZs_SMB/PEZ_feed_1449.shp") |> st_cast("LINESTRING"),
+              st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/PEZs_SMB/PEZ_feed_1450.shp"),
+              st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/PEZs_SMB/PEZ_feed_1451.shp"),
+              st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/PEZs_SMB/PEZ_feed_1452.shp")|> st_cast("LINESTRING"))
+
+pezs.feed <- pezs.feed |> 
+  mutate(PEZ_type = "feed")
+
+pezs <- rbind(pezs, pezs.feed)
+
+poly.crop <- st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/polytocropto.shp")
+ScallopSurv.sf <- st_intersection(ScallopSurv.sf, st_union(pez.poly))
+
+#### Import Mar-scal shapefiles
+
+# Find where tempfiles are stored
+temp <- tempfile()
+# Download this to the temp directory
+download.file("https://raw.githubusercontent.com/Mar-scal/GIS_layers/master/inshore_boundaries/inshore_boundaries.zip", temp)
+# Figure out what this file was saved as
+temp2 <- tempfile()
+# Unzip it
+unzip(zipfile=temp, exdir=temp2)
+
+# Now read in the shapefiles
+
+#Management zones
+mgmt.zones <- rbind(st_read(paste0(temp2, "/SPA1A_polygon_NAD83.shp")) %>% mutate(ET_ID = "1A"), st_read(paste0(temp2, "/SPA1B_polygon_NAD83.shp")) %>% mutate(ET_ID = "1B"), st_read(paste0(temp2, "/SPA2_polygon_NAD83.shp"))%>% mutate(ET_ID = "2"), st_read(paste0(temp2, "/SPA3_polygon_NAD83.shp"))%>% mutate(ET_ID = "3"), st_read(paste0(temp2, "/SPA4_polygon_NAD83.shp"))%>% mutate(ET_ID = "4"), st_read(paste0(temp2, "/SPA5_polygon_NAD83.shp"))%>% mutate(ET_ID = "5"), st_read(paste0(temp2, "/SPA6A_polygon_NAD83.shp")) %>% mutate(ET_ID = "6A"), st_read(paste0(temp2, "/SPA6B_polygon_NAD83.shp")) %>% mutate(ET_ID = "6B"), st_read(paste0(temp2, "/SPA6C_polygon_NAD83.shp")) %>% mutate(ET_ID = "6C"),  st_read(paste0(temp2, "/SPA6D_polygon_NAD83.shp")) %>% mutate(ET_ID = "6D")) %>% 
+  st_transform(crs= 4269)
+
+
+land.chunk <- st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/mainland.chunk.shp")
+
+#Read in land shapefile - used for filtering out points on land.
+temp <- tempfile()
+# Download this to the temp directory
+download.file("https://raw.githubusercontent.com/Mar-scal/GIS_layers/master/other_boundaries/other_boundaries.zip", temp)
+# Figure out what this file was saved as
+temp2 <- tempfile()
+# Unzip it
+unzip(zipfile=temp, exdir=temp2)
+
+land <- st_read(paste0(temp2, "/Atl_region_land.shp"), crs = 4326) %>% 
+  st_transform(crs = 4269) %>%
+  filter(PROVINCE %in% c("Nova Scotia", "New Brunswick", "Prince Edward Island", "Newfoundland and Labrador")) %>% 
+  st_make_valid() %>%  #shapefile contains invalid geometry
+  dplyr::select(PROVINCE)
+
+```
+
+```{r Contour plot setup - mature scallop, echo = FALSE, include = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+
+com.contours <- contour.gen(ScallopSurv %>% filter(STRATA_ID %in% c(22, 23, 24)) %>% #only SPA3
+                              dplyr::select(ID, lon, lat, adult), ticks='define',nstrata=7,str.min=0,place=2,id.par=3.5,units="mm",interp.method='gstat',key='strata',blank=T,plot=F,res=0.01)
+
+#lvls <- c(1,25,50,100,200,300,400,500)
+#lvls <- c(1,10,15,25,50,75,100,200,300,400,500)
+lvls <- c(1,5,10,50,100,200,300,400,500) #levels to be color coded
+CL <- contourLines(com.contours$image.dat,levels=lvls) #breaks interpolated raster/matrix according to levels so that levels can be color coded
+CP <- convCP(CL)
+totCont.poly <- CP$PolySet
+
+##Convert pbsmapping object to sf
+totCont.poly <- as.PolySet(totCont.poly,projection = "LL") #assuming you provide Lat/Lon data and WGS84
+totCont.poly <- PolySet2SpatialLines(totCont.poly) # Spatial lines is a bit more general (don't need to have boxes closed)
+totCont.poly.sf <- st_as_sf(totCont.poly) %>%
+  st_transform(crs = 4269) %>% #Need to transform (missmatch with ellps=wgs84 and dataum=wgs84)
+  st_cast("POLYGON") %>% #Convert multilines to polygons
+  st_make_valid() %>% 
+  mutate(level = unique(CP$PolyData$level))
+
+#plot(totCont.poly.sf)
+#mapview::mapview(totCont.poly.sf) +
+#  mapview::mapview(sites.sf, col.regions = "red")
+
+#st_write(totCont.poly.sf, "Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/1991-2022_prerecDensity.shp", driver = "ESRI Shapefile", overwrite = T)
+
+#labels <- labels <- c("1-25", "25-50", "50-100","100-200","200-300","300-400","400-500", "500+")
+#labels <- c("1-10", "10-15", "15-25", "25-50", "50-75", "75-100","100-200","200-300","300-400","400-500", "500+")
+labels <- c("1-5", "5-10", "10-50", "50-100", "100-200", "200-300", "300-400", "400-500", "500+")
+#col <- brewer.pal(length(lvls),"YlGn")
+col <-c("#4575B4", "#74ADD1", "#ABD9E9", "#E0F3F8", "#FEE090", "#FDAE61", "#F46D43", "#D73027", "firebrick4")
+#col <- rev(brewer.pal(length(lvls),"RdYlBu"))  #RdBu, Spectral set colours
+cfd <- scale_fill_manual(values = alpha(col, 0.9), breaks = labels, name = expression(frac(N,tow)), limits = labels) #set custom fill arguments for pecjector
+```
+
+
+```{r Contour plot set up - SPA4 and 1A adult scallop, echo = FALSE, include = FALSE, message = FALSE, warning = FALSE}
+
+#SPA 4 and SPA 1A
+
+com.contours.2 <- contour.gen(ScallopSurv %>% 
+                              filter(!STRATA_ID %in% c(22, 23, 24, 46, 45, 44, 42, 43, 41)) %>%
+                              dplyr::select(ID, lon, lat, adult), ticks='define',nstrata=7,str.min=0,place=2,id.par=3.5,units="mm",interp.method='gstat',key='strata',blank=T,plot=F,res=0.01)
+
+
+#lvls <- c(1,5,10,50,100,200,300,400,500) #levels to be color coded
+CL.2 <- contourLines(com.contours.2$image.dat,levels=lvls) #breaks interpolated raster/matrix according to levels so that levels can be color coded
+CP.2 <- convCP(CL.2)
+totCont.poly.2 <- CP.2$PolySet
+
+##Convert pbsmapping object to sf
+totCont.poly.2 <- as.PolySet(totCont.poly.2,projection = "LL") #assuming you provide Lat/Lon data and WGS84
+totCont.poly.2 <- PolySet2SpatialLines(totCont.poly.2) # Spatial lines is a bit more general (don't need to have boxes closed)
+totCont.poly.sf.2 <- st_as_sf(totCont.poly.2) %>%
+  st_transform(crs = 4269) %>% #Need to transform (missmatch with ellps=wgs84 and dataum=wgs84)
+  st_cast("POLYGON") %>% #Convert multilines to polygons
+  st_make_valid() %>% 
+  mutate(level = unique(CP.2$PolyData$level))
+
+
+totCont.poly.sf.2 <- st_intersection(totCont.poly.sf.2, st_union(mgmt.zones |> filter(ET_ID != 3)))
+plot(totCont.poly.sf.2)
+
+contours <- rbind(totCont.poly.sf, totCont.poly.sf.2, sf_column_name = NULL) |> 
+  group_by(level) %>%
+  summarise()
+
+
+
+
+#labels <- c("1-5", "5-10", "10-50", "50-100", "100-200", "200-300", "300-400", "400-500", "500+")
+#col <- rev(brewer.pal(length(lvls),"RdYlBu")) #c("#d7191c","#fdae61", "#ffffbf", "#abd9e9","#2c7bb6")# # #set colours
+#cfd <- scale_fill_manual(values = alpha(col, 0.9), breaks = labels, name = expression(frac(N,tow)), limits = labels) #set custom fill arguments for pecjector
+
+```
+
+```{r Contour plot - SPA4 and 1A adult scallop, echo = FALSE, include = TRUE, message = FALSE, warning = FALSE}
+
+p <- pecjector(area ="spa3",repo ='github',c_sys="ll", gis.repo = 'github', plot=F,plot_as = 'ggplot',
+               add_layer = list(land = "grey", bathy = "ScallopMap", scale.bar = c('tl',0.5,-1,-1)), add_custom = list(obj = contours %>% arrange(level) %>% mutate(brk = labels[1:length(unique(CP.2$PolyData$level))]) %>% mutate(brk = fct_reorder(brk, level)) %>% dplyr::select(brk) %>% st_intersection(st_union(pez.poly)), size = 1, fill = "cfd", color = NA))
+
+
+p + #Plot survey data and format figure.
+  geom_sf(data = ScallopSurv.sf %>% 
+                       st_intersection(st_union(pez.poly)), colour = "black", size = 0.5) +
+  geom_sf(data = pezs, aes(linetype = PEZ_type), colour = "red",  size = 1, alpha = 0.7, fill = NA) +
+  scale_linetype_manual(values = c("dashed","solid"), name = "Benthic PEZs", labels = c("Feces - sink speed 0.3 cm/s","Feed - sink speed 5.3 cm/s"))+
+  geom_sf(data = land, colour = "black", size = 1, fill = "grey") +
+  geom_sf(data = mgmt.zones, colour = "black", size = 1, fill = NA, linetype = "dashed") +
+  geom_sf(data = land.chunk, colour = "grey", size = 1, fill = "grey") +
+  geom_sf_text(data = mgmt.zones |> filter(ET_ID == 3), aes(label = "SPA 3"), size = 4, colour = "black")+
+  geom_sf_text(data = mgmt.zones |> filter(ET_ID == "1A"), aes(label = "SPA 1A"), size = 4, colour = "black", nudge_y = -0.22, nudge_x = -0.2)+
+  geom_sf_text(data = mgmt.zones |> filter(ET_ID == "4"), aes(label = "SPA 4"), size = 4, colour = "black", nudge_y = -0.15, nudge_x = -0.25)+
+  geom_sf(data = sites.sf, colour = "black", size = 1.25, fill = alpha("white", 0.2)) + #alpha = 0.7,
+  geom_sf_text(data = sites.sf, aes(label = Site), size = 4, colour = "black", nudge_x = 0.015, nudge_y = 0.009)+
+  labs(x = "Longitude", y = "Latitude") + #title = paste("1991-2022 ", "SPA3 Adult Scallop Density (> 65 mm)"), 
+  guides(fill = guide_legend(override.aes= list(alpha = .7))) + #Legend transparency
+  coord_sf(xlim = c(-66.52,-65.80), ylim = c(44.1,44.60), expand = FALSE)+
+  theme(plot.title = element_text(size = 12, hjust = 0.5), #plot title size and position
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        legend.title = element_text(size = 10, face = "bold"), 
+        legend.text = element_text(size = 8),
+        legend.position = c(.84,.34), #legend position
+        legend.box.background = element_rect(colour = "white", fill= "white"), #Legend bkg colour and transparency
+        legend.box.margin = margin(6, 8, 6, 8),
+        legend.key = element_rect(fill = "white"),legend.key.width = unit(8, 'mm'),
+        panel.border = element_rect(colour = "black", fill=NA, size=1))
+
+#ggsave(filename = paste0("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/exploratory_figures/1991-2022_65mmplus_Density_3.png"), plot = last_plot(), scale = 2.5, width = 8, height = 8, dpi = 300, units = "cm", limitsize = TRUE)
+
+```
+
+
+## Young scallop (< 65 mm)
+
+```{r Contour plot set up - young scallop, echo = FALSE, include = FALSE, message = FALSE, warning = FALSE}
+
+#YOUNG Scallop
+
+com.contours <- contour.gen(ScallopSurv %>% filter(STRATA_ID %in% c(22, 23, 24)) %>% #only SPA3
+                              dplyr::select(ID, lon, lat, young), ticks='define',nstrata=7,str.min=0,place=2,id.par=3.5,units="mm",interp.method='gstat',key='strata',blank=T,plot=F,res=0.01)
+
+#lvls <- c(1,50,100,200,300,400,500)
+#lvls <- c(1,10,15,25,50,75,100,200,300,400,500)
+lvls <- c(1,5,10,50,100,200,300,400,500) #levels to be color coded
+CL <- contourLines(com.contours$image.dat,levels=lvls) #breaks interpolated raster/matrix according to levels so that levels can be color coded
+CP <- convCP(CL)
+totCont.poly <- CP$PolySet
+
+##Convert pbsmapping object to sf
+totCont.poly <- as.PolySet(totCont.poly,projection = "LL") #assuming you provide Lat/Lon data and WGS84
+totCont.poly <- PolySet2SpatialLines(totCont.poly) # Spatial lines is a bit more general (don't need to have boxes closed)
+totCont.poly.sf <- st_as_sf(totCont.poly) %>%
+  st_transform(crs = 4269) %>% #Need to transform (missmatch with ellps=wgs84 and dataum=wgs84)
+  st_cast("POLYGON") %>% #Convert multilines to polygons
+  st_make_valid() %>% 
+  mutate(level = unique(CP$PolyData$level))
+
+#labels <- c("1-50", "50-100","100-200","200-300","300-400","400-500", "500+")
+labels <- c("1-5", "5-10", "10-50", "50-100", "100-200", "200-300", "300-400", "400-500", "500+")
+#col <- brewer.pal(length(lvls),"YlGn")
+col <-c("#4575B4", "#74ADD1", "#ABD9E9", "#E0F3F8", "#FEE090", "#FDAE61", "#F46D43", "#D73027", "firebrick4")
+#labels <- c("1-10", "10-15", "15-25", "25-50", "50-75", "75-100","100-200","200-300","300-400","400-500", "500+")
+#col <- rev(brewer.pal(length(lvls),"RdYlBu")) #c("#d7191c","#fdae61", "#ffffbf", "#abd9e9","#2c7bb6")# # #set colours
+cfd <- scale_fill_manual(values = alpha(col, 0.8), breaks = labels, name = expression(frac(N,tow)), limits = labels) #set custom fill arguments for pecjector
+
+```
+
+```{r Contour plot set up - SPA4 and 1A young scallop, echo = FALSE, include = FALSE, message = FALSE, warning = FALSE}
+
+#SPA 4 and SPA 1A
+
+com.contours.2 <- contour.gen(ScallopSurv %>% 
+                              filter(!STRATA_ID %in% c(22, 23, 24, 46, 45, 44, 42, 43, 41)) %>%
+                              dplyr::select(ID, lon, lat, young), ticks='define',nstrata=7,str.min=0,place=2,id.par=3.5,units="mm",interp.method='gstat',key='strata',blank=T,plot=F,res=0.01)
+
+
+#lvls <- c(1,5,10,50,100,200,300,400,500) #levels to be color coded
+CL.2 <- contourLines(com.contours.2$image.dat,levels=lvls) #breaks interpolated raster/matrix according to levels so that levels can be color coded
+CP.2 <- convCP(CL.2)
+totCont.poly.2 <- CP.2$PolySet
+
+##Convert pbsmapping object to sf
+totCont.poly.2 <- as.PolySet(totCont.poly.2,projection = "LL") #assuming you provide Lat/Lon data and WGS84
+totCont.poly.2 <- PolySet2SpatialLines(totCont.poly.2) # Spatial lines is a bit more general (don't need to have boxes closed)
+totCont.poly.sf.2 <- st_as_sf(totCont.poly.2) %>%
+  st_transform(crs = 4269) %>% #Need to transform (missmatch with ellps=wgs84 and dataum=wgs84)
+  st_cast("POLYGON") %>% #Convert multilines to polygons
+  st_make_valid() %>% 
+  mutate(level = unique(CP.2$PolyData$level))
+
+totCont.poly.sf.2 <- st_intersection(totCont.poly.sf.2, st_union(mgmt.zones |> filter(ET_ID != 3)))
+plot(totCont.poly.sf.2)
+
+contours <- rbind(totCont.poly.sf, totCont.poly.sf.2, sf_column_name = NULL) |> 
+  group_by(level) %>%
+  summarise()
+
+
+
+#labels <- c("1-5", "5-10", "10-50", "50-100", "100-200", "200-300", "300-400", "400-500", "500+")
+#col <- rev(brewer.pal(length(lvls),"YlGn"))
+#col <- rev(brewer.pal(length(lvls),"RdYlBu")) #c("#d7191c","#fdae61", "#ffffbf", "#abd9e9","#2c7bb6")# # #set colours
+cfd <- scale_fill_manual(values = alpha(col, 0.8), breaks = labels, name = expression(frac(N,tow)), limits = labels) #set custom fill arguments for pecjector
+
+```
+
+```{r Contour plot - SPA4 and 1A young scallop, echo = FALSE, include = TRUE, message = FALSE, warning = FALSE}
+
+p <- pecjector(area = "spa3",repo ='github',c_sys="ll", gis.repo = 'github', plot=F,plot_as = 'ggplot',
+               add_layer = list(land = "grey", bathy = "ScallopMap", scale.bar = c('tl',0.5,-1,-1)), add_custom = list(obj = contours %>% arrange(level) %>% mutate(brk = labels[1:length(unique(CP.2$PolyData$level))]) %>% mutate(brk = fct_reorder(brk, level)) %>% dplyr::select(brk) %>% st_intersection(st_union(pez.poly)), size = 1, fill = "cfd", color = NA))
+
+
+p + #Plot survey data and format figure.
+  geom_sf(data = ScallopSurv.sf %>% 
+                       st_intersection(st_union(pez.poly)), colour = "black", size = 0.5) +
+  geom_sf(data = pezs, aes(linetype = PEZ_type), colour = "red",  size = 1, alpha = 0.7, fill = NA) +
+  scale_linetype_manual(values = c("dashed","solid"), name = "Benthic PEZs", labels = c("Feces - sink speed 0.3 cm/s","Feed - sink speed 5.3 cm/s"))+
+  geom_sf(data = land, colour = "black", size = 1, fill = "grey") +
+  geom_sf(data = mgmt.zones, colour = "black", size = 1, fill = NA, linetype = "dashed") +
+  geom_sf(data = land.chunk, colour = "grey", size = 1, fill = "grey") +
+  geom_sf_text(data = mgmt.zones |> filter(ET_ID == 3), aes(label = "SPA 3"), size = 4, colour = "black")+
+  geom_sf_text(data = mgmt.zones |> filter(ET_ID == "1A"), aes(label = "SPA 1A"), size = 4, colour = "black", nudge_y = -0.22, nudge_x = -0.2)+
+  geom_sf_text(data = mgmt.zones |> filter(ET_ID == "4"), aes(label = "SPA 4"), size = 4, colour = "black", nudge_y = -0.15, nudge_x = -0.25)+
+  geom_sf(data = sites.sf, colour = "black", size = 1.25, fill = alpha("white", 0.2)) + #alpha = 0.7,
+  geom_sf_text(data = sites.sf, aes(label = Site), size = 4, colour = "black", nudge_x = 0.015, nudge_y = 0.009)+
+  #geom_sf(data = pezs, colour = "red", size = 1, alpha = 0.7, fill = NA) +
+  labs(x = "Longitude", y = "Latitude") + #title = paste("1991-2022 ", "SPA3 Density (< 65 mm)"),
+  guides(fill = guide_legend(override.aes= list(alpha = .7))) + #Legend transparency
+  coord_sf(xlim = c(-66.52,-65.80), ylim = c(44.1,44.60), expand = FALSE)+
+  theme(plot.title = element_text(size = 14, hjust = 0.5), #plot title size and position
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        legend.title = element_text(size = 10, face = "bold"), 
+        legend.text = element_text(size = 8),
+        legend.position = c(.84,.34), #legend position
+        legend.box.background = element_rect(colour = "white", fill= "white"), #Legend bkg colour and transparency
+        legend.box.margin = margin(6, 8, 6, 8),
+        legend.key = element_rect(fill = "white"),legend.key.width = unit(8, 'mm'),
+        panel.border = element_rect(colour = "black", fill=NA, size=1))
+
+#ggsave(filename = paste0("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/exploratory_figures/1991-2022_less65mm_Density_green.png"), plot = last_plot(), scale = 2.5, width = 8, height = 8, dpi = 300, units = "cm", limitsize = TRUE)
+
+```
+
+# Section 4: Landings
+
+Average Proportion of landings before 2010 = 0.20
+
+Average Proportion of landings after 2010 = 0.37
+
+```{r SMB Landings, echo = FALSE, message = FALSE, include = TRUE}
+
+smb.landings <- read.csv("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/SPA3_SMB_LandingsProp.csv") 
+#smb.landings$Year <- as.character(smb.landings$Year)
+
+#ggplot(data = smb.landings, aes(x = Year, y = Prop.SMB))+
+#  geom_point()+
+#  geom_smooth(method = lm, se = FALSE)
+
+
+pre.2010 <- smb.landings |> 
+  filter(Year <= 2010)
+
+post.2010 <- smb.landings |> 
+  filter(Year > 2010)
+
+mean(pre.2010$Prop.SMB)
+mean(post.2010$Prop.SMB)
+
+
+smb.landings <- smb.landings |> 
+  mutate(mean.prop = case_when(Year <= 2010 ~ mean(pre.2010$Prop.SMB), 
+                           Year > 2010 ~ mean(post.2010$Prop.SMB)))
+  
+ggplot(data = smb.landings, aes(x = Year, y = Prop.SMB))+
+  geom_point()+
+  geom_line(data = smb.landings |> filter(Year <= 2010), aes(x = Year, y = mean.prop), colour = "red", size = 2)+
+  geom_line(data = smb.landings |> filter(Year > 2010), aes(x = Year, y = mean.prop), colour = "red", size = 2)+
+  labs(x = "Year", y = "Proportion of landings in SMB")+
+  geom_smooth(method = lm, se = FALSE)
+
+```
+
+```{r Gridded Commercial Logbook plots - Catch, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+
+rm(cfd)
+
+grid.data <- st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/Commercial_Grid_logdata_SPA1A-3-4.shp") |> 
+  rename(SUM_CATCH_MT = s_CATCH_) |> 
+  rename(SUM_EFFORT = s_EFFOR)
+
+SUM_CATCH_MT_BINS <- cut(grid.data$SUM_CATCH_MT, c(0,2,4,6,8,10,12), right = FALSE)
+
+grid.data <- cbind(grid.data, SUM_CATCH_MT_BINS)
+
+#labels <- c("0-2", "2-4", "4-6", "6-8", "8-10")
+#col <- rev(brewer.pal(length(labels),"RdYlBu"))
+
+
+p <- pecjector(area = "spa3",repo ='github',c_sys="ll", gis.repo = 'github', plot=F,plot_as = 'ggplot',
+               add_layer = list(land = "grey", bathy = "ScallopMap", scale.bar = c('tl',0.5,-1,-1)))
+
+
+p + #Plot survey data and format figure.
+  geom_sf(data = grid.data %>% dplyr::select(SUM_CATCH_MT_BINS), aes(fill = SUM_CATCH_MT_BINS)) +
+  scale_fill_manual(values = rev(brewer.pal(6,"RdYlBu")), name = "Catch (mt)")+
+  geom_sf(data = pezs, colour = "red", size = 1, alpha = 0.7, fill = NA) +
+  geom_sf(data = land, colour = "black", size = 1, fill = "grey") +
+  geom_sf(data = mgmt.zones, colour = "black", size = 1, fill = NA, linetype = "dashed") +
+  geom_sf(data = land.chunk, colour = "grey", size = 1, fill = "grey") +
+  geom_sf_text(data = mgmt.zones |> filter(ET_ID == 3), aes(label = "SPA 3"), size = 4, colour = "black")+
+  geom_sf_text(data = mgmt.zones |> filter(ET_ID == "1A"), aes(label = "SPA 1A"), size = 4, colour = "black", nudge_y = -0.22, nudge_x = -0.2)+
+  geom_sf_text(data = mgmt.zones |> filter(ET_ID == "4"), aes(label = "SPA 4"), size = 4, colour = "black", nudge_y = -0.15, nudge_x = -0.25)+
+  geom_sf(data = sites.sf, colour = "black", size = 1.25, fill = alpha("white", 0.2)) + #alpha = 0.7,
+  geom_sf_text(data = sites.sf, aes(label = Site), size = 3, colour = "black", nudge_x = 0.015, nudge_y = 0.009)+
+  labs(x = "Longitude", y = "Latitude") + #title = paste("1991-2022 ", "SPA3 Density (< 65 mm)"),
+  guides(fill = guide_legend(override.aes= list(alpha = .7))) + #Legend transparency
+  coord_sf(xlim = c(-66.52,-65.80), ylim = c(44.1,44.60), expand = FALSE)+
+  theme(plot.title = element_text(size = 14, hjust = 0.5), #plot title size and position
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        legend.title = element_text(size = 10, face = "bold"), 
+        legend.text = element_text(size = 8),
+        legend.position = c(.87,.34), #legend position
+        legend.box.background = element_rect(colour = "white"),#, fill= alpha("white", 0.7)), #Legend bkg colour and transparency
+        legend.box.margin = margin(6, 8, 6, 8),
+        panel.border = element_rect(colour = "black", fill=NA, size=1))
+
+#ggsave(filename = paste0("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/exploratory_figures/2017-2022_CommCatch_MT.png"), plot = last_plot(), scale = 2.5, width = 8, height = 8, dpi = 300, units = "cm", limitsize = TRUE)
+```
+
+```{r Gridded Commercial Logbook plots - Effort, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+
+
+SUM_EFFORT_BINS <- cut(grid.data$SUM_EFFORT, c(1,50,100,200,300,400,500), right = FALSE)
+
+grid.data <- cbind(grid.data, SUM_EFFORT_BINS)
+
+#labels <- c("0-2", "2-4", "4-6", "6-8", "8-10")
+#col <- rev(brewer.pal(length(labels),"RdYlBu"))
+
+
+p <- pecjector(area = "spa3",repo ='github',c_sys="ll", gis.repo = 'github', plot=F,plot_as = 'ggplot',
+               add_layer = list(land = "grey", bathy = "ScallopMap", scale.bar = c('tl',0.5,-1,-1)))
+
+
+p + #Plot survey data and format figure.
+  geom_sf(data = grid.data %>% dplyr::select(SUM_EFFORT_BINS), aes(fill = SUM_EFFORT_BINS)) +
+  scale_fill_manual(values = rev(brewer.pal(6,"RdYlBu")), name = "Effort (h)")+
+  geom_sf(data = pezs, colour = "red", size = 1, alpha = 0.7, fill = NA) +
+  geom_sf(data = land, colour = "black", size = 1, fill = "grey") +
+  geom_sf(data = mgmt.zones, colour = "black", size = 1, fill = NA, linetype = "dashed") +
+  geom_sf(data = land.chunk, colour = "grey", size = 1, fill = "grey") +
+  geom_sf_text(data = mgmt.zones |> filter(ET_ID == 3), aes(label = "SPA 3"), size = 4, colour = "black")+
+  geom_sf_text(data = mgmt.zones |> filter(ET_ID == "1A"), aes(label = "SPA 1A"), size = 4, colour = "black", nudge_y = -0.22, nudge_x = -0.2)+
+  geom_sf_text(data = mgmt.zones |> filter(ET_ID == "4"), aes(label = "SPA 4"), size = 4, colour = "black", nudge_y = -0.15, nudge_x = -0.25)+
+  geom_sf(data = sites.sf, colour = "black", size = 1.25, fill = alpha("white", 0.2)) + #alpha = 0.7,
+  geom_sf_text(data = sites.sf, aes(label = Site), size = 3, colour = "black", nudge_x = 0.015, nudge_y = 0.009)+
+  labs(x = "Longitude", y = "Latitude") + #title = paste("1991-2022 ", "SPA3 Density (< 65 mm)"),
+  guides(fill = guide_legend(override.aes= list(alpha = .7))) + #Legend transparency
+  coord_sf(xlim = c(-66.52,-65.80), ylim = c(44.1,44.60), expand = FALSE)+
+  theme(plot.title = element_text(size = 14, hjust = 0.5), #plot title size and position
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        legend.title = element_text(size = 10, face = "bold"), 
+        legend.text = element_text(size = 8),
+        legend.position = c(.87,.34), #legend position
+        legend.box.background = element_rect(colour = "white"),#, fill= alpha("white", 0.7)), #Legend bkg colour and transparency
+        legend.box.margin = margin(6, 8, 6, 8),
+        panel.border = element_rect(colour = "black", fill=NA, size=1))
+
+#ggsave(filename = paste0("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/exploratory_figures/2017-2022_CommEffort.png"), plot = last_plot(), scale = 2.5, width = 8, height = 8, dpi = 300, units = "cm", limitsize = TRUE)
+
+```
+
