@@ -24,24 +24,24 @@ for(fun in funcs)
 
 # ----Import Data----------------------------------------------
 
-sites.sf <- st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/SMB_proposed_Aquaculture_sites.shp")
-pezs <- rbind(st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1449.shp") |> st_cast("LINESTRING"),
-              st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1450.shp"),
-              st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1451.shp"),
-              st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1452.shp")|> st_cast("LINESTRING"))
+sites.sf <- st_read("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/SMB_proposed_Aquaculture_sites.shp")
+pezs <- rbind(st_read("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1449.shp") |> st_cast("LINESTRING"),
+              st_read("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1450.shp"),
+              st_read("Y:/Inshore/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1451.shp"),
+              st_read("Y:/Inshore/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1452.shp")|> st_cast("LINESTRING"))
 
 pezs <- pezs |> 
   mutate(PEZ_type = "feces")
 
-pez.1449 <- st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1449.shp")
-pez.1452 <- st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1452.shp")
+pez.1449 <- st_read("Y:/Inshore/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1449.shp")
+pez.1452 <- st_read("Y:/Inshore/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1452.shp")
 pez.poly <- st_union(pez.1449, pez.1452) |> 
   st_transform(32620)
 
-pezs.feed <- rbind(st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/PEZs_SMB/PEZ_feed_1449.shp") |> st_cast("LINESTRING"),
-              st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/PEZs_SMB/PEZ_feed_1450.shp"),
-              st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/PEZs_SMB/PEZ_feed_1451.shp"),
-              st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/PEZs_SMB/PEZ_feed_1452.shp")|> st_cast("LINESTRING"))
+pezs.feed <- rbind(st_read("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/PEZs_SMB/PEZ_feed_1449.shp") |> st_cast("LINESTRING"),
+              st_read("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/PEZs_SMB/PEZ_feed_1450.shp"),
+              st_read("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/PEZs_SMB/PEZ_feed_1451.shp"),
+              st_read("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/PEZs_SMB/PEZ_feed_1452.shp")|> st_cast("LINESTRING"))
 
 pezs.feed <- pezs.feed |> 
   mutate(PEZ_type = "feed")
@@ -65,7 +65,7 @@ unzip(zipfile=temp, exdir=temp2)
 mgmt.zones <- rbind(st_read(paste0(temp2, "/SPA1A_polygon_NAD83.shp")) %>% mutate(ET_ID = "1A"), st_read(paste0(temp2, "/SPA1B_polygon_NAD83.shp")) %>% mutate(ET_ID = "1B"), st_read(paste0(temp2, "/SPA2_polygon_NAD83.shp"))%>% mutate(ET_ID = "2"), st_read(paste0(temp2, "/SPA3_polygon_NAD83.shp"))%>% mutate(ET_ID = "3"), st_read(paste0(temp2, "/SPA4_polygon_NAD83.shp"))%>% mutate(ET_ID = "4"), st_read(paste0(temp2, "/SPA5_polygon_NAD83.shp"))%>% mutate(ET_ID = "5"), st_read(paste0(temp2, "/SPA6A_polygon_NAD83.shp")) %>% mutate(ET_ID = "6A"), st_read(paste0(temp2, "/SPA6B_polygon_NAD83.shp")) %>% mutate(ET_ID = "6B"), st_read(paste0(temp2, "/SPA6C_polygon_NAD83.shp")) %>% mutate(ET_ID = "6C"),  st_read(paste0(temp2, "/SPA6D_polygon_NAD83.shp")) %>% mutate(ET_ID = "6D")) %>% 
   st_transform(crs= 4269)
 
-land.chunk <- st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/mainland.chunk.shp")
+land.chunk <- st_read("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/mainland.chunk.shp")
 
 #Read in land shapefile - used for filtering out points on land.
 temp <- tempfile()
@@ -87,7 +87,7 @@ land <- st_read(paste0(temp2, "/Atl_region_land.shp"), crs = 4326) %>%
 ## Load KDE Layers - Effort ##
 
 #SPA1A, 3 and 4
-kde.effort <-read_stars("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/KernelDensity/KernelD_ALL_Effort_utm.tif", NA_value = NA)
+kde.effort <-read_stars("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/KernelDensity/KernelD_ALL_Effort_utm.tif", NA_value = NA)
 kde.effort <- st_warp(kde.effort, crs = 32620)%>% 
   st_crop(st_union(pez.poly))
 
@@ -143,7 +143,7 @@ p + #Plot survey data and format figure
         legend.key = element_rect(fill = "white"),
         panel.border = element_rect(colour = "black", fill=NA, size=1))
 
-#ggsave(filename = paste0("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/exploratory_figures/2004-22_logbook_kde_effort_2.png"), plot = last_plot(), scale = 2.5, width = 8, height = 8, dpi = 300, units = "cm", limitsize = TRUE)
+#ggsave(filename = paste0("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/exploratory_figures/2004-22_logbook_kde_effort_2.png"), plot = last_plot(), scale = 2.5, width = 8, height = 8, dpi = 300, units = "cm", limitsize = TRUE)
 
 
 #####WITH INSETS################################################################################################################
@@ -246,7 +246,7 @@ pez.poly <- st_union(pez.1449, pez.1452) |>
   st_transform(32620)
 
 #SPA1A, 3 and 4
-kde.pts <-read_stars("E:/AquacultureReview_shps/KernelD_ALL_pts_utm.tif", NA_value = NA)
+kde.pts <-read_stars("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/KernelDensity/KernelD_ALL_pts_utm.tif", NA_value = NA)
 kde.pts <- st_warp(kde.pts, crs = 32620)%>% 
   st_crop(st_union(pez.poly))
 
@@ -304,7 +304,7 @@ pez.poly <- st_union(pez.1449, pez.1452) |>
   st_transform(32620)
 
 #SPA1A, 3 and 4
-kde.catch <-read_stars("E:/AquacultureReview_shps/KernelD_ALL_catchmt_utm.tif", NA_value = NA)
+kde.catch <-read_stars("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/KernelD_ALL_catchmt_utm.tif", NA_value = NA)
 kde.catch <- st_warp(kde.catch, crs = 32620)%>% 
   st_crop(st_union(pez.poly))
 

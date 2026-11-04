@@ -14,7 +14,7 @@ library(data.table)
 library(raster)
 
 #read in data and convert to degdec
-sites <- read.csv("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/GIS_info/Proposed_Site_Boundaries.txt")
+sites <- read.csv("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/GIS_info/Proposed_Site_Boundaries.txt")
 
 sf::sf_use_s2(FALSE)
 
@@ -72,7 +72,7 @@ land <- st_read(paste0(temp2, "/Atl_region_land.shp"), crs = 4326) %>%
   st_make_valid() %>%  #shapefile contains invalid geometry
   dplyr::select(PROVINCE)
 
-direct <- "Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/GIS_info"
+direct <- "Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/GIS_info"
 data.1449 <- read.table(paste0(direct,"/1449_pez_benthic_sink0.3cms_2023-02-23.ll")) |> 
   mutate(Site = as.factor(1449)) |> st_as_sf(coords = c("V1", "V2"), crs = 4326) %>% #May need to adjust Lat long headers in coords = c()
   summarise(do_union = FALSE) %>% 

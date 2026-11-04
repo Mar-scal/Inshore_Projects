@@ -24,7 +24,7 @@ uid <- keyring::key_list("Oracle")[1,2]
 pwd <- keyring::key_get("Oracle", uid)
 
 #Specify directory (make new one for each request)
-direct <- "Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/GIS_info"
+direct <- "Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/GIS_info"
   #"Y:/Admin/Request and Review Tracking/Aquaculture_Reviews/2021/Beaver_Harbour/" #to save logs and read in ll data
 last.fishing.yr <- 2022
 start.year <- last.fishing.yr - 5 #Get data from latest year back 5 years (6 years inclusive).

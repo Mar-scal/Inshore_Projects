@@ -26,10 +26,10 @@ library(ggcorrplot)
 library(scales)
 
 
-source("Z:/Projects/Holistic_sampling_with_HGS/TechReport_SPA3/Pr_Frac_function.R") #Plotting residuals - found on Sky
-source("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/HighstatLibV13.R")
+source("Y:/Projects/Holistic_sampling_with_HGS/TechReport_SPA3/Pr_Frac_function.R") #Plotting residuals - found on Sky
+source("Y:/Inhore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/HighstatLibV13.R")
 
-data <- read_csv("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/SPA3_scallop_data.csv", show_col_types = FALSE) 
+data <- read_csv("Y:/Inhore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/SPA3_scallop_data.csv", show_col_types = FALSE) 
 
 funcs <- c("https://raw.githubusercontent.com/Mar-scal/Assessment_fns/master/Maps/pectinid_projector_sf.R",
            "https://raw.githubusercontent.com/Mar-scal/Inshore/master/contour.gen.r")

@@ -19,7 +19,7 @@ for(fun in funcs)
 
 #LobsterSurv <- read.csv("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/lobcom_dataset.csv")
 #LobsterSurv <- read.csv("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/lobrec_dataset.csv")
-LobsterSurv <- read.csv("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/lobpre_dataset.csv") 
+LobsterSurv <- read.csv("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/lobpre_dataset.csv") 
 
 LobsterSurv <- LobsterSurv|> 
   mutate(ID = 1:nrow(LobsterSurv)) |> 
@@ -29,17 +29,17 @@ LobsterSurv.sf <- LobsterSurv |>
   st_as_sf(coords = c("SLONG","SLAT"), crs = 4326) |> 
   st_transform(4269)
 
-sites.sf <- st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/SMB_proposed_Aquaculture_sites.shp")
-pezs <- rbind(st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1449.shp") |> st_cast("LINESTRING"),
-              st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1450.shp"),
-              st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1451.shp"),
-              st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1452.shp")|> st_cast("LINESTRING"))
+sites.sf <- st_read("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/SMB_proposed_Aquaculture_sites.shp")
+pezs <- rbind(st_read("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1449.shp") |> st_cast("LINESTRING"),
+              st_read("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1450.shp"),
+              st_read("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1451.shp"),
+              st_read("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1452.shp")|> st_cast("LINESTRING"))
 
-pez.1449 <- st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1449.shp")
-pez.1452 <- st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1452.shp")
+pez.1449 <- st_read("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1449.shp")
+pez.1452 <- st_read("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/proposed_site_data.1452.shp")
 pez.poly <- st_union(pez.1449, pez.1452)
 
-poly.crop <- st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/polytocropto.shp")
+poly.crop <- st_read("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/polytocropto.shp")
 LobsterSurv.sf <- st_intersection(LobsterSurv.sf, st_union(pez.poly))
 
 #### Import Mar-scal shapefiles
@@ -60,7 +60,7 @@ mgmt.zones <- rbind(st_read(paste0(temp2, "/SPA1A_polygon_NAD83.shp")) %>% mutat
   st_transform(crs= 4269)
 
 
-land.chunk <- st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/mainland.chunk.shp")
+land.chunk <- st_read("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/mainland.chunk.shp")
 
 #Read in land shapefile - used for filtering out points on land.
 temp <- tempfile()
@@ -177,11 +177,11 @@ p + #Plot survey data and format figure.
 
 #Number per tow plot - per size class, and SPA3 strata
 
-Lobster.com <- read.csv("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/lobcom_dataset.csv") |> 
+Lobster.com <- read.csv("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/lobcom_dataset.csv") |> 
   mutate(size_class = "Commercial")
-Lobster.rec <- read.csv("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/lobrec_dataset.csv")|> 
+Lobster.rec <- read.csv("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/lobrec_dataset.csv")|> 
   mutate(size_class = "Recruit")
-Lobster.prerec <- read.csv("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/lobpre_dataset.csv") |> 
+Lobster.prerec <- read.csv("Y:/Inshore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/2023/St. Mary's Bay/data/lobpre_dataset.csv") |> 
   mutate(size_class = "Pre-Recruit")
 
 Lobster <- rbind(Lobster.com, Lobster.rec, Lobster.prerec)

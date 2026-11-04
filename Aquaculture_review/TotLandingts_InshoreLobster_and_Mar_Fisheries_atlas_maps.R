@@ -88,7 +88,7 @@ mapview(scal.pts)
 ##################################################################################################################
 
 #Read in lobster data
-lobs <- readRDS("Z:/GISdata/Private/InshoreLobsterLandings/LandingsbyGrid2014-2018.rds") |> 
+lobs <- readRDS("Y:/GISdata/Private/InshoreLobsterLandings/LandingsbyGrid2014-2018.rds") |> 
   st_transform(crs = 32620)
 #Make Ploygon to crop lobster layer:
 #east.shore <- (mapview(lobs)) %>%
@@ -97,7 +97,7 @@ lobs <- readRDS("Z:/GISdata/Private/InshoreLobsterLandings/LandingsbyGrid2014-20
 #plot(east.shore$drawn)
 #east.shore <- st_transform(east.shore$drawn, crs = 4269)
 #st_write(east.shore,"Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/east.shore.shp")
-east.shore <- st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/east.shore.shp")|> 
+east.shore <- st_read("Y:/Inhore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/east.shore.shp")|> 
   st_transform(crs = 32620)
 
 lobs <- st_difference(lobs,st_union(east.shore))
@@ -269,7 +269,7 @@ mapview(all.spec.pts)
 ##################################################################################################################
 
 #Read in lobster data
-lobs <- readRDS("Z:/GISdata/Private/InshoreLobsterLandings/LandingsbyGrid2009-2018.rds") |> 
+lobs <- readRDS("Y:/GISdata/Private/InshoreLobsterLandings/LandingsbyGrid2009-2018.rds") |> 
   st_transform(crs = 32620)
 #Make Ploygon to crop lobster layer:
 #east.shore <- (mapview(lobs)) %>%
@@ -278,7 +278,7 @@ lobs <- readRDS("Z:/GISdata/Private/InshoreLobsterLandings/LandingsbyGrid2009-20
 #plot(east.shore$drawn)
 #east.shore <- st_transform(east.shore$drawn, crs = 4269)
 #st_write(east.shore,"Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/east.shore.shp")
-east.shore <- st_read("Y:/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/east.shore.shp")|> 
+east.shore <- st_read("Y:/Inhore/Admin/Request_and_Review_Tracking/Aquaculture_Reviews/shp/east.shore.shp")|> 
   st_transform(crs = 32620)
 
 lobs <- st_difference(lobs,st_union(east.shore))
