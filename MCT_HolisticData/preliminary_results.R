@@ -218,7 +218,7 @@ ggplot(Data_Master, aes(x = Meat_weight_g, y = Gonad_weight_g)) +
     y = "Gonad Weight (g)",
     fill = "Maturity Stage"
   ) +
-  scale_fill_manual(values = c("cyan", "blue", "yellow", "green", "red")) +
+  scale_fill_manual(values = c("blue", "yellow", "green", "red","cyan")) +
   theme_classic() +
   theme(
     axis.text = element_text(size = 12),
@@ -258,4 +258,4 @@ F.<-ggplot(Data_Master, aes(y= Shell_height_mm ,x=Shell_weight_g)) + geom_text(l
 
 #plot and save
 cowplot::plot_grid(A.,B.,C.,D.,E.,F.)
-ggsave(filename = "Additional.QAQC.png", path = save_path, width = 14, height = 10, units = "in", device = "png")
+ggsave(filename = "Additional.QAQC.png", path = saveplot.dir, width = 14, height = 10, units = "in", device = "png")

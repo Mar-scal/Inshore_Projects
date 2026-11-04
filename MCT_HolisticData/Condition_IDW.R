@@ -36,7 +36,9 @@ chan <- dbConnect(dbDriver("Oracle"),username=uid, password=pwd,'ptran')
 
 #set year 
 survey.year <- 2026  #survey year
-area <- "SPA6"
+area <- "SFA29" #SPA6, BF, SFA29, SPA2
+map.area <- "sfa29" #BoF, spa1, spa1b, spa3, spa4, spa6, or sfa29
+
 # path.directory <- paste0("Y:/Projects/Holistic_sampling_Inshore/Holistic_sampling_",area,"/",survey.year,"/MCP_Reporting/")
 path.directory <- paste0("Y:/Projects/Holistic_sampling_Inshore/Holistic_sampling_",area,"/",survey.year,"/")
 
@@ -100,7 +102,7 @@ test.data$Log.DEPTH.CTR <- test.data$Log.DEPTH - mean(test.data$Log.DEPTH)
 summary(test.data)
 
 # run model (GLMM)
-MWSH2.YYYY <- glmer(Meat_weight_g~Log.HEIGHT.CTR+Log.DEPTH.CTR+(Log.HEIGHT.CTR|Tow),data=test.data,
+MWSH2.YYYY <- glmer(Meat_weight_g~Log.HEIGHT.CTR+Log.DEPTH.CTR+(Log.HEIGHT.CTR|Tow),data=test.data, # or (1|Tow) if fails to converge
                     family=Gamma(link=log), na.action = na.omit)
 summary(MWSH2.YYYY)
 plot(MWSH2.YYYY)
@@ -129,11 +131,11 @@ livefreq.condition.spatial <- livefreq.condition.spatial %>%
   unique() #get rid of duplicated rows/predictions for each tow
 
 #export for spatial plot later 
-write.csv(livefreq.condition.spatial, paste0(path.directory,"dataproducts/ConditionForSpatialPlot_",area,"_",survey.year,".csv"), row.names = FALSE)
+write.csv(livefreq.condition.spatial, paste0(path.directory,"Data/ConditionForSpatialPlot_",area,"_",survey.year,".csv"), row.names = FALSE)
 con.dat<- livefreq.condition.spatial
 
 #Load csv for mapping ####
-con.dat <- read.csv(paste0(path.directory, "dataproducts/ConditionForSpatialPlot_",area,"_",survey.year,".csv"))
+con.dat <- read.csv(paste0(path.directory, "Data/ConditionForSpatialPlot_",area,"_",survey.year,".csv"))
 
 #### IDW PLOTTING ####
 # ----------- Making a custom boundary for IDW analysis based off survey tows ---------------
@@ -179,9 +181,9 @@ Surv.sf<-st_transform(Surv.sf,crs = 32620)
 # Define groups so that BoF, SPA3, and GM can be isolated
 group_list <- list(
   BoF = c("1", "4", "5"),
-  SPA3 = c("3"),
-  SPA6 = c("6A", "6B", "6C"),
-  SFA29 = c("29")
+  spa3 = c("3"),
+  spa6 = c("6A", "6B", "6C"),
+  sfa29 = c("29")
 )
 
 # Function to process each group
@@ -205,7 +207,7 @@ create_polygon <- function(group_ids, group_name) {
 # Apply function to each group and remove NULLs
 polygons <- lapply(names(group_list), function(name) create_polygon(group_list[[name]], name))
 idw_sf<- do.call(rbind, polygons[!sapply(polygons, is.null)]) %>%    # Remove NULLs and combine
-  filter(group=="SPA6") ### ***pick BoF, SPA3, or SPA6 so that it runs faster than running a layer for all SPAs***
+  filter(group==map.area) ### ***pick BoF, SPA3, or SPA6 in map.area at begininng of script so that it runs faster than running a layer for all SPAs***
 # Ensure correct CRS
 st_crs(idw_sf) <- 32620
 
@@ -295,22 +297,25 @@ p <- function(
   layers
 }
 
-
 #creating list with legend positions so that you can call for "spa1a" legend position. Any edits to legend positions are done here
 legend_positions <- list(
+  "BoF"  = c(0.85, 0.35),
   "spa1"  = c(0.85, 0.35),
   "spa1b" = c(0.85, 0.25),
   "spa3"  = c(0.82, 0.44),
   "spa4"  = c(0.88, 0.23),
   "spa6"  = c(0.15, 0.62),
-  "sfa29" = c(0.15, 0.62)
+  "sfa29" = c(0.15, 0.25)
 )
 
 mgmt_zone_styles <- list(
   "BoF"  = geom_sf(data = mgmt.zones.detailed %>% filter(!STRATA_ID %in% c(26,57,90,91,92,93)), color = "grey40", fill = NA, linewidth = 0.3, linetype = "solid"),
+  "spa1"  = geom_sf(data = mgmt.zones.detailed %>% filter(!STRATA_ID %in% c(26,57,90,91,92,93)), color = "grey40", fill = NA, linewidth = 0.3, linetype = "solid"),
+  "spa1b"  = geom_sf(data = mgmt.zones.detailed %>% filter(!STRATA_ID %in% c(26,57,90,91,92,93)), color = "grey40", fill = NA, linewidth = 0.3, linetype = "solid"),
   "spa3" = geom_sf(data = mgmt.zones.detailed %>% filter(STRATA_ID %in% c(92,93)), color = "red", linewidth = 0.3, fill = NA, linetype = "dashed"),
+  "spa4"  = geom_sf(data = mgmt.zones.detailed %>% filter(!STRATA_ID %in% c(26,57,90,91,92,93)), color = "grey40", fill = NA, linewidth = 0.3, linetype = "solid"),
   "spa6" = geom_sf(data = mgmt.zones.detailed %>% filter(STRATA_ID %in% c(90,91)) %>% st_union() %>% st_as_sf(), color = "red", fill = NA, linewidth = 0.3, linetype = "dashed"),
-  "sfa29" = geom_sf(data = mgmt.zones.detailed %>% filter(STRATA_ID %in% c(41,42,43,44,45)) %>% st_union() %>% st_as_sf(), color = "red", fill = NA, linewidth = 0.3, linetype = "dashed"),
+  "sfa29" = geom_sf(data = mgmt.zones.detailed %>% filter(STRATA_ID %in% c(41,42,43,44,45)) %>% st_as_sf(), color = "grey40", fill = NA, linewidth = 0.3, linetype = "solid"),
   # "spa6in" = geom_sf(data = mgmt.zones.detailed %>%  filter(STRATA_ID %in% 90), color = "red", fill = NA, linewidth = 0.2, linetype = "solid"),
   # "spa6out" = geom_sf(data = mgmt.zones.detailed %>%  filter(STRATA_ID %in% 91), color = "black", fill = NA, linewidth = 0.2, linetype = "solid"),
   "Gen"  = geom_sf(data = mgmt.zones, color = "black", fill = NA, linewidth = 0.3, linetype = "solid")
@@ -318,12 +323,12 @@ mgmt_zone_styles <- list(
 
 coord_ranges = list(
   "BoF" = list(xlim = c(-66.50,-64.30), ylim = c(44.25,45.80)),
-  "spa1a" = list(xlim = c(-66.40,-64.70), ylim = c(44.37,45.30)),
+  "spa1" = list(xlim = c(-66.40,-64.70), ylim = c(44.37,45.30)),
   "spa1b" = list(xlim = c(-66.20,-64.30), ylim = c(44.80,45.70)),
   "spa3"  = list(xlim = c(-66.82,-65.80), ylim = c(43.62,44.60)),
   "spa4"  = list(xlim = c(-66.20,-65.51), ylim = c(44.43,44.96)),
   "spa6"  = list(xlim = c(-67.5, -66.35), ylim = c(44.4, 45.2)),
-  "sfa29"  = list(xlim = c(-66.5, -65.5), ylim = c(43.1, 43.8)),
+  "sfa29"  = list(xlim = c(-66.8, -65.3), ylim = c(43, 44)),
   "BoFall" = list(xlim = c(-67.28,-64.4), ylim = c(43.60, 45.62))
 ) 
 
@@ -351,14 +356,14 @@ summary(Surv.sf$Condition)
 bathy + #Plot survey data and format figure.
   geom_sf(data = preds_idw2, aes(fill = prediction),  colour = NA) + 
   scale_fill_viridis_c(option = "H",  trans = "sqrt", name = "Condition (g)", limits = c(min(preds_idw2$prediction),max(preds_idw2$prediction))) + 
-  p(mgmt_zone = mgmt_zone_styles[["Gen"]], Land, Surv.sf,  scale_location = "tl", arrow_location = "tl", legend_position = legend_positions[["spa6"]]) +
-  coord_sf(xlim = coord_ranges[["spa6"]]$xlim, ylim = coord_ranges[["spa6"]]$ylim, expand = FALSE) +
+  p(mgmt_zone = mgmt_zone_styles[["Gen"]], Land, Surv.sf,  scale_location = "tl", arrow_location = "tl", legend_position = legend_positions[[map.area]]) +
+  coord_sf(xlim = coord_ranges[[map.area]]$xlim, ylim = coord_ranges[[map.area]]$ylim, expand = FALSE) +
   labs(x = "Longitude", y = "Latitude")
 
 #save
 ggsave(filename = paste0(saveplot.dir,'IDWplot_Condition_',area,"_",survey.year,'.png'), plot = last_plot(), scale = 2.5, width = 8, height = 8, dpi = 300, units = "cm", limitsize = TRUE)
 
-
+### For MCT, To be updated for new directories ####
 # Convert sf to terra vector
 v <- vect(preds_idw2)
 
@@ -444,8 +449,8 @@ writeRaster(r,paste0(path.directory,"dataproducts/rasters/",area,survey.year,"_C
 #     scale_location = "tl",
 #     arrow_location = "tl") +
 #   coord_sf(
-#     xlim = coord_ranges[["spa6"]]$xlim,
-#     ylim = coord_ranges[["spa6"]]$ylim,
+#     xlim = coord_ranges[[map.area]]$xlim,
+#     ylim = coord_ranges[[map.area]]$ylim,
 #     expand = FALSE
 #   ) +
 #   labs(x = "Longitude", y = "Latitude") +
