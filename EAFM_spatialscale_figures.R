@@ -92,14 +92,14 @@ new.SFA29E <- st_read("Y:/Inshore/Inshore Scallop Fishing Area Map/Management_Sp
 #plot(new.SFA29E)
 
 #Georges Bank Scallop boundaries:
-Gba.scallop <- st_read("Z:/Projects/OFI/BEcoME/Data/WP3/shp/OFI_GBa_2020.shp") %>%
+Gba.scallop <- st_read("Y:/Projects/OFI/BEcoME/Data/WP3/shp/OFI_GBa_2020.shp") %>%
   dplyr::group_by(brk) %>% 
   dplyr::summarise(across(geometry, ~ sf::st_combine(.)), .groups = "drop") %>% 
   st_make_valid() %>% 
   dplyr::summarise()
 #plot(Gba.scallop)
 
-Gbb.scallop <- st_read("Z:/Projects/OFI/BEcoME/Data/WP3/shp/OFI_GBb_2020.shp") %>%
+Gbb.scallop <- st_read("Y:/Projects/OFI/BEcoME/Data/WP3/shp/OFI_GBb_2020.shp") %>%
   dplyr::group_by(brk) %>% 
   dplyr::summarise(across(geometry, ~ sf::st_combine(.)), .groups = "drop") %>% 
   st_make_valid() %>% 
